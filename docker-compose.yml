@@ -1,0 +1,87 @@
+services:
+  postgres:
+    image: postgres:16-bookworm
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?}
+      POSTGRES_DB: ${POSTGRES_DB:?}
+    ports: ["127.0.0.1:5432:5432"]
+    volumes: [postgres:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      retries: 20
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    ports: ["127.0.0.1:6379:6379"]
+    volumes: [redis:/data]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 20
+  minio:
+    image: intranet-minio:2025-09-07-source
+    build:
+      context: .
+      dockerfile: infra/minio/Dockerfile
+      secrets: [proxy_ca]
+    command: server /data --console-address ':9001'
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?}
+    ports: ["127.0.0.1:9000:9000", "127.0.0.1:9001:9001"]
+    volumes: [minio:/data]
+  clamav:
+    image: clamav/clamav:stable
+    ports: ["127.0.0.1:3310:3310"]
+    entrypoint: ["/bin/sh", "/opt/intranet/clamav-entrypoint.sh"]
+    volumes:
+      - clamav:/var/lib/clamav
+      - ./infra/clamav-entrypoint.sh:/opt/intranet/clamav-entrypoint.sh:ro
+      - ${SSL_CERT_FILE:-/etc/ssl/certs/ca-certificates.crt}:/etc/ssl/certs/ca-certificates.crt:ro
+  mailpit:
+    image: axllent/mailpit:v1.27
+    ports: ["127.0.0.1:1025:1025", "127.0.0.1:8025:8025"]
+  app:
+    image: intranet-app:development
+    build:
+      context: .
+      secrets: [proxy_ca]
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      REDIS_URL: redis://redis:6379
+      S3_ENDPOINT: http://minio:9000
+      CLAMAV_HOST: clamav
+      SMTP_HOST: mailpit
+    ports: ["127.0.0.1:3000:3000"]
+    command: ["sh", "-c", "npm run db:migrate && npm run db:seed && npm start"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      minio: { condition: service_started }
+      clamav: { condition: service_started }
+      mailpit: { condition: service_started }
+  worker:
+    image: intranet-app:development
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      REDIS_URL: redis://redis:6379
+      SMTP_HOST: mailpit
+      S3_ENDPOINT: http://minio:9000
+      CLAMAV_HOST: clamav
+    command: ["npm", "run", "worker"]
+    depends_on:
+      app: { condition: service_started }
+volumes:
+  postgres:
+  redis:
+  minio:
+  clamav:
+secrets:
+  proxy_ca:
+    file: ${CODEX_PROXY_CERT:-/etc/ssl/certs/ca-certificates.crt}

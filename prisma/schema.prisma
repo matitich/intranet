@@ -1,0 +1,557 @@
+generator client {
+  provider = "prisma-client-js"
+}
+datasource db {
+  provider = "postgresql"
+}
+enum RoleName {
+  SUPERADMIN_TI
+  SECRETARIO_MUNICIPAL
+  ALCALDE
+  CONCEJAL
+  FUNCIONARIO_FINANZAS
+  FUNCIONARIO_JURIDICO
+  FUNCIONARIO_RESPUESTAS
+  AUDITOR
+}
+enum Classification {
+  PUBLICO
+  INTERNO
+  RESERVADO
+}
+model Municipality {
+  id String @id @default(cuid())
+  name String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+model Role {
+  id RoleName @id
+  users User[]
+  permissions Permission[]
+}
+model Permission {
+  id String @id @default(cuid())
+  roleId RoleName
+  role Role @relation(fields: [roleId], references: [id])
+  resource String
+  action String
+  @@unique([roleId, resource, action])
+}
+model User {
+  id String @id @default(cuid())
+  email String @unique
+  name String
+  rut String? @unique
+  passwordHash String?
+  roleId RoleName
+  role Role @relation(fields: [roleId], references: [id])
+  active Boolean @default(false)
+  mustChangePassword Boolean @default(false)
+  photo String?
+  deletedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  sessions Session[]
+  mfa MfaSecret?
+  recoveryCodes RecoveryCode[]
+  invitations Invitation[]
+  resets PasswordResetToken[]
+  history PasswordHistory[]
+  commissions CommissionMember[]
+  access DocumentAccess[]
+  favorites Favorite[]
+  attendance EventAttendance[]
+  notes PersonalNote[]
+  requests InformationRequest[] @relation("Author")
+  assignedRequests InformationRequest[] @relation("Assignee")
+  messages RequestMessage[]
+  notifications Notification[]
+  preferences NotificationPreference[]
+  votes VoteRecord[]
+  reviews AgendaReview[]
+  feedTokenHash String? @unique
+  @@index([roleId, active])
+}
+model PasswordHistory {
+  id String @id @default(cuid())
+  userId String
+  user User @relation(fields:[userId],references:[id])
+  hash String
+  createdAt DateTime @default(now())
+  @@index([userId, createdAt])
+}
+model Session {
+  id String @id @default(cuid())
+  tokenHash String @unique
+  userId String
+  user User @relation(fields:[userId],references:[id])
+  lastSeenAt DateTime @default(now())
+  expiresAt DateTime
+  device String
+  ipHash String
+  createdAt DateTime @default(now())
+  @@index([userId, expiresAt])
+}
+model MfaChallenge {
+  id String @id
+  userId String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+}
+model MfaSecret {
+  userId String @id
+  user User @relation(fields:[userId],references:[id])
+  encryptedSecret String
+  lastStep BigInt @default(0)
+  enabled Boolean @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+model RecoveryCode {
+  id String @id @default(cuid())
+  userId String
+  user User @relation(fields:[userId],references:[id])
+  hash String @unique
+  usedAt DateTime?
+  createdAt DateTime @default(now())
+}
+model Invitation {
+  id String @id @default(cuid())
+  tokenHash String @unique
+  userId String
+  user User @relation(fields:[userId],references:[id])
+  expiresAt DateTime
+  usedAt DateTime?
+  createdAt DateTime @default(now())
+}
+model PasswordResetToken {
+  id String @id @default(cuid())
+  tokenHash String @unique
+  userId String
+  user User @relation(fields:[userId],references:[id])
+  expiresAt DateTime
+  usedAt DateTime?
+  createdAt DateTime @default(now())
+}
+model LoginAttempt {
+  id String @id @default(cuid())
+  accountHash String
+  ipHash String
+  success Boolean
+  createdAt DateTime @default(now())
+  @@index([accountHash, createdAt])
+  @@index([ipHash, createdAt])
+}
+model Commission {
+  id String @id @default(cuid())
+  name String @unique
+  members CommissionMember[]
+  events CalendarEvent[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+model CommissionMember {
+  userId String
+  commissionId String
+  user User @relation(fields:[userId],references:[id])
+  commission Commission @relation(fields:[commissionId],references:[id])
+  @@id([userId,commissionId])
+}
+model CouncilPeriod {
+  id String @id @default(cuid())
+  name String
+  start DateTime
+  end DateTime
+  sessions CouncilSession[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+model Document {
+  id String @id @default(cuid())
+  title String
+  type String
+  number String
+  year Int
+  publicationDate DateTime
+  effectiveDate DateTime?
+  status String @default("VIGENTE")
+  subject String
+  unit String
+  classification Classification @default(INTERNO)
+  allowDownload Boolean @default(true)
+  deletedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  versions DocumentVersion[]
+  access DocumentAccess[]
+  tags DocumentTag[]
+  favorites Favorite[]
+  sourceRelations DocumentRelation[] @relation("Source")
+  targetRelations DocumentRelation[] @relation("Target")
+  attachments AgendaAttachment[]
+  @@unique([type,number,year])
+  @@index([classification, publicationDate])
+}
+model DocumentVersion {
+  id String @id @default(cuid())
+  documentId String
+  document Document @relation(fields:[documentId],references:[id])
+  version Int
+  objectKey String @unique
+  name String
+  mime String
+  size Int
+  sha256 String
+  scanStatus String @default("QUARANTINE")
+  extractedText String @default("")
+  metadata Json
+  createdAt DateTime @default(now())
+  @@unique([documentId,version])
+}
+model DocumentAccess {
+  documentId String
+  userId String
+  document Document @relation(fields:[documentId],references:[id])
+  user User @relation(fields:[userId],references:[id])
+  @@id([documentId,userId])
+}
+model DocumentTag {
+  id String @id @default(cuid())
+  documentId String
+  document Document @relation(fields:[documentId],references:[id])
+  name String
+  @@unique([documentId,name])
+}
+model DocumentRelation {
+  id String @id @default(cuid())
+  sourceId String
+  targetId String
+  source Document @relation("Source",fields:[sourceId],references:[id])
+  target Document @relation("Target",fields:[targetId],references:[id])
+  kind String
+  @@unique([sourceId,targetId,kind])
+}
+model Favorite {
+  userId String
+  documentId String
+  user User @relation(fields:[userId],references:[id])
+  document Document @relation(fields:[documentId],references:[id])
+  @@id([userId,documentId])
+}
+model CalendarEvent {
+  id String @id @default(cuid())
+  title String
+  type String
+  start DateTime
+  end DateTime
+  location String
+  status String @default("PROGRAMADA")
+  commissionId String?
+  commission Commission? @relation(fields:[commissionId],references:[id])
+  councilSession CouncilSession?
+  attendance EventAttendance[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([start,status])
+}
+model EventAttendance {
+  eventId String
+  userId String
+  event CalendarEvent @relation(fields:[eventId],references:[id])
+  user User @relation(fields:[userId],references:[id])
+  status String
+  justification String?
+  updatedAt DateTime @updatedAt
+  @@id([eventId,userId])
+}
+model CouncilSession {
+  id String @id @default(cuid())
+  number Int
+  type String
+  eventId String @unique
+  event CalendarEvent @relation(fields:[eventId],references:[id])
+  periodId String
+  period CouncilPeriod @relation(fields:[periodId],references:[id])
+  agendaStatus String @default("BORRADOR")
+  publishedAt DateTime?
+  changeLog Json @default("[]")
+  items AgendaItem[]
+  agreements Agreement[]
+  minutes Minutes[]
+  recordings Recording[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@unique([periodId,type,number])
+}
+model AgendaItem {
+  id String @id @default(cuid())
+  councilSessionId String
+  councilSession CouncilSession @relation(fields:[councilSessionId],references:[id])
+  order Int
+  title String
+  description String
+  type String
+  presenter String
+  minutes Int
+  requiresVote Boolean @default(false)
+  attachments AgendaAttachment[]
+  vote Vote?
+  notes PersonalNote[]
+  reviews AgendaReview[]
+  @@unique([councilSessionId,order])
+}
+model AgendaAttachment {
+  agendaItemId String
+  documentId String
+  agendaItem AgendaItem @relation(fields:[agendaItemId],references:[id])
+  document Document @relation(fields:[documentId],references:[id])
+  @@id([agendaItemId,documentId])
+}
+model AgendaReview {
+  agendaItemId String
+  userId String
+  agendaItem AgendaItem @relation(fields:[agendaItemId],references:[id])
+  user User @relation(fields:[userId],references:[id])
+  reviewed Boolean @default(true)
+  @@id([agendaItemId,userId])
+}
+model Vote {
+  id String @id @default(cuid())
+  agendaItemId String @unique
+  agendaItem AgendaItem @relation(fields:[agendaItemId],references:[id])
+  result String
+  records VoteRecord[]
+  agreement Agreement?
+  createdAt DateTime @default(now())
+}
+model VoteRecord {
+  voteId String
+  userId String
+  vote Vote @relation(fields:[voteId],references:[id])
+  user User @relation(fields:[userId],references:[id])
+  choice String
+  @@id([voteId,userId])
+}
+model PersonalNote {
+  id String @id @default(cuid())
+  userId String
+  agendaItemId String
+  user User @relation(fields:[userId],references:[id])
+  agendaItem AgendaItem @relation(fields:[agendaItemId],references:[id])
+  ciphertext String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@unique([userId,agendaItemId])
+}
+model Budget {
+  id String @id @default(cuid())
+  year Int @unique
+  lines BudgetLine[]
+  modifications BudgetModification[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+model BudgetLine {
+  id String @id @default(cuid())
+  budgetId String
+  budget Budget @relation(fields:[budgetId],references:[id])
+  kind String
+  subtitle String
+  item String
+  assignment String
+  area String
+  description String
+  initial Decimal @db.Decimal(20,0)
+  current Decimal @db.Decimal(20,0)
+  executions BudgetExecution[]
+  @@unique([budgetId,kind,subtitle,item,assignment,area])
+}
+model BudgetModification {
+  id String @id @default(cuid())
+  budgetId String
+  budget Budget @relation(fields:[budgetId],references:[id])
+  number Int
+  date DateTime
+  kind String
+  amount Decimal @db.Decimal(20,0)
+  description String
+  status String
+  agreementId String?
+  agreement Agreement? @relation(fields:[agreementId],references:[id])
+  createdAt DateTime @default(now())
+  @@unique([budgetId,number])
+}
+model BudgetExecution {
+  id String @id @default(cuid())
+  budgetLineId String
+  budgetLine BudgetLine @relation(fields:[budgetLineId],references:[id])
+  month Int
+  accrued Decimal @db.Decimal(20,0)
+  received Decimal @db.Decimal(20,0)
+  @@unique([budgetLineId,month])
+}
+model Agreement {
+  id String @id @default(cuid())
+  number Int
+  year Int
+  date DateTime
+  councilSessionId String
+  councilSession CouncilSession @relation(fields:[councilSessionId],references:[id])
+  voteId String? @unique
+  vote Vote? @relation(fields:[voteId],references:[id])
+  text String
+  subject String
+  responsible String
+  deadline DateTime
+  priority String @default("NORMAL")
+  status String @default("APROBADO")
+  progress AgreementProgress[]
+  modifications BudgetModification[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@unique([year,number])
+  @@index([status,deadline])
+}
+model AgreementProgress {
+  id String @id @default(cuid())
+  agreementId String
+  agreement Agreement @relation(fields:[agreementId],references:[id])
+  authorId String
+  comment String
+  percent Int
+  evidenceKey String?
+  createdAt DateTime @default(now())
+}
+model InformationRequest {
+  id String @id @default(cuid())
+  number Int @unique @default(autoincrement())
+  authorId String
+  author User @relation("Author",fields:[authorId],references:[id])
+  assigneeId String?
+  assignee User? @relation("Assignee",fields:[assigneeId],references:[id])
+  recipient String
+  subject String
+  description String
+  basis String
+  priority String @default("NORMAL")
+  status String @default("ENVIADA")
+  visibleToCouncil Boolean @default(false)
+  deadline DateTime
+  messages RequestMessage[]
+  attachments RequestAttachment[]
+  statusLogs RequestStatusLog[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([authorId,status,deadline])
+  @@index([assigneeId,status])
+}
+model RequestMessage {
+  id String @id @default(cuid())
+  requestId String
+  request InformationRequest @relation(fields:[requestId],references:[id])
+  authorId String
+  author User @relation(fields:[authorId],references:[id])
+  body String
+  official Boolean @default(false)
+  createdAt DateTime @default(now())
+}
+model RequestAttachment {
+  id String @id @default(cuid())
+  requestId String
+  request InformationRequest @relation(fields:[requestId],references:[id])
+  objectKey String
+  name String
+  sha256 String
+  scanStatus String @default("QUARANTINE")
+  createdAt DateTime @default(now())
+}
+model RequestStatusLog {
+  id String @id @default(cuid())
+  requestId String
+  request InformationRequest @relation(fields:[requestId],references:[id])
+  actorId String
+  previous String?
+  next String
+  createdAt DateTime @default(now())
+}
+model Holiday {
+  date String @id
+  name String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+model Minutes {
+  id String @id @default(cuid())
+  councilSessionId String
+  councilSession CouncilSession @relation(fields:[councilSessionId],references:[id])
+  version Int
+  status String @default("BORRADOR")
+  objectKey String?
+  text String
+  observations Json @default("[]")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@unique([councilSessionId,version])
+}
+model Recording {
+  id String @id @default(cuid())
+  councilSessionId String
+  councilSession CouncilSession @relation(fields:[councilSessionId],references:[id])
+  objectKey String
+  mime String
+  transcript String?
+  createdAt DateTime @default(now())
+}
+model Notification {
+  id String @id @default(cuid())
+  userId String
+  user User @relation(fields:[userId],references:[id])
+  type String
+  title String
+  body String
+  href String
+  readAt DateTime?
+  archivedAt DateTime?
+  dedupeKey String? @unique
+  createdAt DateTime @default(now())
+  @@index([userId,readAt,createdAt])
+}
+model NotificationPreference {
+  userId String
+  type String
+  user User @relation(fields:[userId],references:[id])
+  email Boolean @default(true)
+  internal Boolean @default(true)
+  dailyDigest Boolean @default(false)
+  @@id([userId,type])
+}
+model Announcement {
+  id String @id @default(cuid())
+  title String
+  body String
+  priority String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+model AuditLog {
+  sequence BigInt @id @default(autoincrement())
+  actorId String?
+  action String
+  resource String
+  resourceId String?
+  ipHash String?
+  device String?
+  previousHash String
+  hash String @unique
+  metadata Json
+  createdAt DateTime @default(now())
+  @@index([actorId,createdAt])
+  @@index([resource,resourceId])
+}
+model SystemSetting {
+  key String @id
+  value Json
+  updatedAt DateTime @updatedAt
+}
